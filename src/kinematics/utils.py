@@ -31,7 +31,28 @@ def calculate_angle(a, o, b):
 
 
 def buildComponent(num_frames, enum):
-    return {each: np.full((num_frames), np.nan) for each in enum}
+    # return {each: np.full((num_frames), np.nan) for each in enum}
+    return {
+            "Raw X": np.full(num_frames, np.nan),
+            "Raw Y": np.full(num_frames, np.nan),
+            "X": np.full(num_frames, np.nan),
+            "Y": np.full(num_frames, np.nan),
+            "X Displacement": np.full(num_frames, np.nan),
+            "Y Displacement": np.full(num_frames, np.nan),
+            "Displacement": np.full(num_frames, np.nan),
+            "X Speed No Smooth": np.full(num_frames, np.nan),
+            "Y Speed No Smooth": np.full(num_frames, np.nan),
+            "Speed No Smooth": np.full(num_frames, np.nan),
+            "X Speed": np.full(num_frames, np.nan),
+            "Y Speed": np.full(num_frames, np.nan),
+            "Speed": np.full(num_frames, np.nan),
+            "X Acceleration No Smooth": np.full(num_frames, np.nan),
+            "Y Acceleration No Smooth": np.full(num_frames, np.nan),
+            "Acceleration No Smooth": np.full(num_frames, np.nan),
+            "X Acceleration": np.full(num_frames, np.nan),
+            "Y Acceleration": np.full(num_frames, np.nan),
+            "Acceleration": np.full(num_frames, np.nan),
+        }
 
 
 if __name__ == '__main__':
