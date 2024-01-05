@@ -186,7 +186,9 @@ class Point:
         self.data['Speed'][self.start_index:self.end_index+1] = np.sqrt(
             x_speed**2 + y_speed**2
         )
-
+        self.data['X Speed Raw'] = self.data['X Speed']
+        self.data['Y Speed Raw'] = self.data['Y Speed']
+        self.data['Speed Raw'] = self.data['Speed']
         if filter_on:
             self.data['X Speed Filter'] = self.data['X Speed']
             self.data['Y Speed Filter'] = self.data['Y Speed']
@@ -227,11 +229,15 @@ class Point:
             self.data['X Speed'][self.start_index:self.end_index+1], prepend=self.data['X Speed'][self.start_index]) / time_diff
         y_accel = np.diff(
             self.data['Y Speed'][self.start_index:self.end_index+1], prepend=self.data['Y Speed'][self.start_index]) / time_diff
+        
         self.data['X Acceleration'][self.start_index:self.end_index+1] = x_accel
         self.data['Y Acceleration'][self.start_index:self.end_index+1] = y_accel
         self.data['Acceleration'][self.start_index:self.end_index+1] = np.sqrt(
             x_accel**2 + y_accel**2
         )
+        self.data['X Acceleration Raw'] = self.data['X Acceleration']
+        self.data['Y Acceleration Raw'] = self.data['Y Acceleration']
+        self.data['Acceleration Raw'] = self.data['Acceleration']
 
         if filter_on:
             self.data['X Acceleration Filter'] = self.data['X Acceleration']
@@ -295,6 +301,9 @@ class Point:
                 "Displacement": self.data['Displacement'].tolist(),
 
                 # speed
+                "X Speed Raw": self.data['X Speed Raw'].tolist(),
+                "Y Speed Raw": self.data['Y Speed Raw'].tolist(),
+                "Speed Raw": self.data['Speed Raw'].tolist(),
                 "X Speed Filter" if 'X Speed Filter' in self.data else None: self.data['X Speed Filter'].tolist() if 'X Speed Filter' in self.data else None,
                 "Y Speed Filter" if 'Y Speed Filter' in self.data else None: self.data['Y Speed Filter'].tolist () if 'Y Speed Filter' in self.data else None,
                 "Speed Filter" if 'Speed Filter' in self.data else None: self.data['Speed Filter'].tolist() if 'Speed Filter' in self.data else None,
@@ -307,6 +316,9 @@ class Point:
                 "Speed": self.data['Speed'].tolist(),
 
                 # acceleration
+                "X Acceleration Raw": self.data['X Acceleration Raw'].tolist(),
+                "Y Acceleration Raw": self.data['Y Acceleration Raw'].tolist(),
+                "Acceleration Raw": self.data['Acceleration Raw'].tolist(),
                 "X Acceleration Filter" if 'X Acceleration Filter' in self.data else None: self.data['X Acceleration Filter'].tolist() if 'X Acceleration Filter' in self.data else None,
                 "Y Acceleration Filter" if 'Y Acceleration Filter' in self.data else None: self.data['Y Acceleration Filter'].tolist() if 'Y Acceleration Filter' in self.data else None,
                 "Acceleration Filter" if 'Acceleration Filter' in self.data else None: self.data['Acceleration Filter'].tolist() if 'Acceleration Filter' in self.data else None,
