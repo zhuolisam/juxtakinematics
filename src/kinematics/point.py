@@ -1,6 +1,5 @@
 import json
 import uuid
-from math import isnan
 from pathlib import Path
 from typing import Any, Literal
 
