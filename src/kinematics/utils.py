@@ -1,7 +1,12 @@
+from datetime import datetime
 from typing import Literal
 
 import numpy as np
 
+
+def get_time():
+    # current date and time
+    return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 def calculate_angle(a, o, b):
     # Calculate the angles using numpy
@@ -40,15 +45,9 @@ def buildComponent(num_frames, enum):
             "X Displacement": np.full(num_frames, np.nan),
             "Y Displacement": np.full(num_frames, np.nan),
             "Displacement": np.full(num_frames, np.nan),
-            "X Speed No Smooth": np.full(num_frames, np.nan),
-            "Y Speed No Smooth": np.full(num_frames, np.nan),
-            "Speed No Smooth": np.full(num_frames, np.nan),
             "X Speed": np.full(num_frames, np.nan),
             "Y Speed": np.full(num_frames, np.nan),
             "Speed": np.full(num_frames, np.nan),
-            "X Acceleration No Smooth": np.full(num_frames, np.nan),
-            "Y Acceleration No Smooth": np.full(num_frames, np.nan),
-            "Acceleration No Smooth": np.full(num_frames, np.nan),
             "X Acceleration": np.full(num_frames, np.nan),
             "Y Acceleration": np.full(num_frames, np.nan),
             "Acceleration": np.full(num_frames, np.nan),

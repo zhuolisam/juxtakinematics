@@ -1,5 +1,6 @@
 import json
 import uuid
+from math import isnan
 from pathlib import Path
 from typing import Any, Literal
 
@@ -10,7 +11,7 @@ from scipy import interpolate
 from .constants import BODY_JOINTS_MAP
 from .filtering import FilteredTrajectory
 from .smoothing import MovingAverage
-from .utils import buildComponent
+from .utils import buildComponent, get_time
 
 PointMetrics = ["X", "Y", "X Displacement", "Y Displacement", "Displacement",
                 "X Speed", "Y Speed", "Speed", "X Acceleration", "Y Acceleration", "Acceleration"]
@@ -71,6 +72,7 @@ class Point:
         self.point_idx = point_idx
         self.point_name = point_name if point_name else BODY_JOINTS_MAP[point_idx] if point_idx is not None else 'point_' + uuid.uuid4(
         ).hex
+        self.filter = FilteredTrajectory()
 
     def initWithEmptyFrames(self, num_frames, fps):
         self.data = buildComponent(num_frames, PointMetrics)
@@ -91,14 +93,14 @@ class Point:
     def __getitem__(self, __name: str) -> Any:
         return self.__dict__[__name]
 
-    def preprocess(self, filter_threshold=None, filter_on=True, interpolate_on=True, preprocess_smoothing_on=None):
+    def preprocess(self, filter_threshold=None, preprocess_interpolate_on=True, preprocess_filter_on=True, preprocess_smoothing_on=False):
         # Find the first non-null data points from the beginning and end
         start_index, end_index = self.find_non_null_indices(self.data['Raw Ori X'])
 
         self.start_index = start_index if start_index is not None else 0
         self.end_index = end_index if end_index is not None else self.calibrationHelper['num_frames'] - 1
 
-        if interpolate_on:
+        if preprocess_interpolate_on:
             # Interpolate the data within the range defined by the first and last non-null data points
             self.data['Raw X'][self.start_index:self.end_index + 1] = self.interpolate_missing(
                 self.data['Raw Ori X'][self.start_index:self.end_index + 1])
@@ -109,13 +111,11 @@ class Point:
             self.data['Raw Y'] = self.data['Raw Ori Y']
 
         # Proceed with filtering if the number of frames is greater than 10
-        can_filter = filter_on and self.calibrationHelper['num_frames'] > 10
+        can_filter = preprocess_filter_on and self.calibrationHelper['num_frames'] > 10
 
         if can_filter:
-            filter = FilteredTrajectory()
-
             # Apply filtering
-            self.data['X'][self.start_index:self.end_index + 1], self.data['Y'][self.start_index:self.end_index + 1] = filter.initialize(
+            self.data['X'][self.start_index:self.end_index + 1], self.data['Y'][self.start_index:self.end_index + 1] = self.filter.initialize(
                 self.data['Raw X'][self.start_index:self.end_index + 1], self.data['Raw Y'][self.start_index:self.end_index + 1])
         else:
             self.data['X'] = self.data['Raw X']
@@ -148,10 +148,15 @@ class Point:
 
         return interpolated_data
 
-    def compute(self, smoothing_on_post=False ):
+    def compute(self, postcalculate_filter_on=False, postcalculate_smoothing_on=False ):
         self.computeDisplacements()
-        self.computeSpeeds(smoothing_on=smoothing_on_post)
-        self.computeAccelerations(smoothing_on=smoothing_on_post)
+        self.computeSpeeds(filter_on=postcalculate_filter_on, smoothing_on=postcalculate_smoothing_on)
+        self.computeAccelerations(filter_on=postcalculate_filter_on, smoothing_on=postcalculate_smoothing_on)
+
+        # Remove keys with all NaN values and replace with empty list
+        for key, value in self.data.items():
+            if np.isnan(value).all():
+                self.data[key] = np.array([])
 
     def computeDisplacements(self):
         # Calculate displacement relative to the first frame
@@ -169,29 +174,55 @@ class Point:
             x_displacement**2 + y_displacement**2
         )
 
-    def computeSpeeds(self, smoothing_on=False):
+    def computeSpeeds(self, filter_on = False, smoothing_on=False):
+        # X Speed Raw -> X Speed Filter -> X Speed Smooth -> X Speed
         time_diff = 1 / self.calibrationHelper['fps']
         x_speed = np.diff(
             self.data['X Displacement'][self.start_index:self.end_index + 1], prepend=self.data['X Displacement'][self.start_index]) / time_diff
         y_speed = np.diff(
             self.data['Y Displacement'][self.start_index:self.end_index + 1], prepend=self.data['Y Displacement'][self.start_index]) / time_diff
+        
         self.data['X Speed'][self.start_index:self.end_index+1] = x_speed
         self.data['Y Speed'][self.start_index:self.end_index+1] = y_speed
-        if smoothing_on:
-            self.data['X Speed No Smooth'] = self.data['X Speed']
-            self.data['Y Speed No Smooth'] = self.data['Y Speed']
-            self.data['Speed No Smooth'] = np.sqrt(
-                self.data['X Speed No Smooth']**2 + self.data['Y Speed No Smooth']**2)
-
-            self.data['X Speed'][self.start_index:self.end_index+1] = MovingAverage.filter_samples(
-                self.data['X Speed'][self.start_index:self.end_index+1], self.calibrationHelper['fps'], 40, 1)
-            self.data['Y Speed'][self.start_index:self.end_index+1] = MovingAverage.filter_samples(
-                self.data['Y Speed'][self.start_index:self.end_index+1], self.calibrationHelper['fps'], 40, 1)
-
         self.data['Speed'][self.start_index:self.end_index+1] = np.sqrt(
-            x_speed**2 + y_speed**2)
+            x_speed**2 + y_speed**2
+        )
 
-    def computeAccelerations(self, smoothing_on=True):
+        if filter_on:
+            self.data['X Speed Filter'] = self.data['X Speed']
+            self.data['Y Speed Filter'] = self.data['Y Speed']
+            # Apply filtering
+            self.data['X Speed Filter'][self.start_index:self.end_index+1], self.data['Y Speed Filter'][self.start_index:self.end_index+1] = self.filter.initialize(
+                self.data['X Speed Filter'][self.start_index:self.end_index+1], self.data['Y Speed Filter'][self.start_index:self.end_index+1])
+            self.data['Speed Filter'] = np.sqrt(
+                self.data['X Speed Filter']**2 + self.data['Y Speed Filter']**2)
+            # Replace the speed with the filtered speed
+            self.data['X Speed'] = self.data['X Speed Filter']
+            self.data['Y Speed'] = self.data['Y Speed Filter']
+            self.data['Speed'] = self.data['Speed Filter']
+
+        if smoothing_on:
+            self.data['X Speed Smooth'] = self.data['X Speed']
+            self.data['Y Speed Smooth'] = self.data['Y Speed']
+            print(self.data['X Speed Smooth'])
+            print(self.data['Y Speed Smooth'])
+            # Apply smoothing
+            self.data['X Speed Smooth'][self.start_index:self.end_index+1] = MovingAverage.filter_samples(
+                self.data['X Speed Smooth'][self.start_index:self.end_index+1], self.calibrationHelper['fps'], 40, 1)
+            self.data['Y Speed Smooth'][self.start_index:self.end_index+1] = MovingAverage.filter_samples(
+                self.data['Y Speed Smooth'][self.start_index:self.end_index+1], self.calibrationHelper['fps'], 40, 1)
+            self.data['Speed Smooth'] = np.sqrt(
+                self.data['X Speed Smooth']**2 + self.data['Y Speed Smooth']**2)
+            
+            print(self.data['X Speed Smooth'])
+            print(self.data['Y Speed Smooth'])
+            # Replace the speed with the filtered speed
+            self.data['X Speed'] = self.data['X Speed Smooth']
+            self.data['Y Speed'] = self.data['Y Speed Smooth']
+            self.data['Speed'] = self.data['Speed Smooth']
+
+    def computeAccelerations(self, filter_on = False, smoothing_on=True):
+        # X Acceleration Raw -> X Acceleration Filter -> X Acceleration Smooth -> X Acceleration
         time_diff = 1 / self.calibrationHelper['fps']
         x_accel = np.diff(
             self.data['X Speed'][self.start_index:self.end_index+1], prepend=self.data['X Speed'][self.start_index]) / time_diff
@@ -199,19 +230,41 @@ class Point:
             self.data['Y Speed'][self.start_index:self.end_index+1], prepend=self.data['Y Speed'][self.start_index]) / time_diff
         self.data['X Acceleration'][self.start_index:self.end_index+1] = x_accel
         self.data['Y Acceleration'][self.start_index:self.end_index+1] = y_accel
+        self.data['Acceleration'][self.start_index:self.end_index+1] = np.sqrt(
+            x_accel**2 + y_accel**2
+        )
+
+        if filter_on:
+            self.data['X Acceleration Filter'] = self.data['X Acceleration']
+            self.data['Y Acceleration Filter'] = self.data['Y Acceleration']
+
+            # Apply filtering
+            self.data['X Acceleration Filter'][self.start_index:self.end_index+1], self.data['Y Acceleration Filter'][self.start_index:self.end_index+1] = self.filter.initialize(
+                self.data['X Acceleration Filter'][self.start_index:self.end_index+1], self.data['Y Acceleration Filter'][self.start_index:self.end_index+1])
+            self.data['Acceleration Filter'] = np.sqrt(
+                self.data['X Acceleration Filter']**2 + self.data['Y Acceleration Filter']**2)
+            
+            # Replace the acceleration with the filtered acceleration
+            self.data['X Acceleration'] = self.data['X Acceleration Filter']
+            self.data['Y Acceleration'] = self.data['Y Acceleration Filter']
+            self.data['Acceleration'] = self.data['Acceleration Filter']
 
         if smoothing_on:
-            self.data['X Acceleration No Smooth'] = self.data['X Acceleration']
-            self.data['Y Acceleration No Smooth'] = self.data['Y Acceleration']
-            self.data['Acceleration No Smooth'] = np.sqrt(
-                self.data['X Acceleration No Smooth']**2 + self.data['Y Acceleration No Smooth']**2)
+            self.data['X Acceleration Smooth'] = self.data['X Acceleration']
+            self.data['Y Acceleration Smooth'] = self.data['Y Acceleration']
 
+            # Apply smoothing
             self.data['X Acceleration'][self.start_index:self.end_index+1] = MovingAverage.filter_samples(
                 self.data['X Acceleration'][self.start_index:self.end_index+1], self.calibrationHelper['fps'], 50, 1)
             self.data['Y Acceleration'][self.start_index:self.end_index+1] = MovingAverage.filter_samples(
                 self.data['Y Acceleration'][self.start_index:self.end_index+1], self.calibrationHelper['fps'], 50, 1)
-        self.data['Acceleration'][self.start_index:self.end_index+1] = np.sqrt(
-            x_accel**2 + y_accel**2)
+            self.data['Acceleration Smooth'] = np.sqrt(
+                self.data['X Acceleration Smooth']**2 + self.data['Y Acceleration Smooth']**2)
+            
+            # Replace the acceleration with the filtered acceleration
+            self.data['X Acceleration'] = self.data['X Acceleration Smooth']
+            self.data['Y Acceleration'] = self.data['Y Acceleration Smooth']
+            self.data['Acceleration'] = self.data['Acceleration Smooth']
 
     def get_metrics(self):
         data = {
@@ -243,20 +296,28 @@ class Point:
                 "Displacement": self.data['Displacement'].tolist(),
 
                 # speed
-                "X Speed No Smooth" if 'X Speed No Smooth' in self.data else None: self.data['X Speed No Smooth'].tolist(),
-                "Y Speed No Smooth"  if 'Y Speed No Smooth' in self.data else None: self.data['Y Speed No Smooth'].tolist(),
+                "X Speed Filter" if 'X Speed Filter' in self.data else None: self.data['X Speed Filter'].tolist() if 'X Speed Filter' in self.data else None,
+                "Y Speed Filter" if 'Y Speed Filter' in self.data else None: self.data['Y Speed Filter'].tolist () if 'Y Speed Filter' in self.data else None,
+                "Speed Filter" if 'Speed Filter' in self.data else None: self.data['Speed Filter'].tolist() if 'Speed Filter' in self.data else None,
+                "Y Speed Smooth"  if 'Y Speed Smooth' in self.data else None: self.data['Y Speed Smooth'].tolist() if 'Y Speed Smooth' in self.data else None,
+                "X Speed Smooth" if 'X Speed Smooth' in self.data else None: self.data['X Speed Smooth'].tolist() if 'X Speed Smooth' in self.data else None,
+                "Speed Smooth" if 'Speed Smooth' in self.data else None: self.data['Speed Smooth'].tolist() if 'Speed Smooth' in self.data else None,
+
                 "X Speed": self.data['X Speed'].tolist(),
                 "Y Speed": self.data['Y Speed'].tolist(),
-                "Speed No Smooth" if 'Speed No Smooth' in self.data else None: self.data['Speed No Smooth'].tolist(),
                 "Speed": self.data['Speed'].tolist(),
 
                 # acceleration
-                "X Acceleration No Smooth" if 'x_acceleration_no_smooth' in self.data else None: self.data['X Acceleration No Smooth'].tolist(),
-                "Y Acceleration No Smooth" if 'y_acceleration_no_smooth' in self.data else None: self.data['Y Acceleration No Smooth'].tolist(),
+                "X Acceleration Filter" if 'X Acceleration Filter' in self.data else None: self.data['X Acceleration Filter'].tolist() if 'X Acceleration Filter' in self.data else None,
+                "Y Acceleration Filter" if 'Y Acceleration Filter' in self.data else None: self.data['Y Acceleration Filter'].tolist() if 'Y Acceleration Filter' in self.data else None,
+                "Acceleration Filter" if 'Acceleration Filter' in self.data else None: self.data['Acceleration Filter'].tolist() if 'Acceleration Filter' in self.data else None,
+                "X Acceleration Smooth" if 'X Acceleration Smooth' in self.data else None: self.data['X Acceleration Smooth'].tolist() if 'X Acceleration Smooth' in self.data else None,
+                "Y Acceleration Smooth" if 'Y Acceleration Smooth' in self.data else None: self.data['Y Acceleration Smooth'].tolist() if 'Y Acceleration Smooth' in self.data else None,
+                "Acceleration Smooth" if 'Acceleration Smooth' in self.data else None: self.data['Acceleration Smooth'].tolist() if 'Acceleration Smooth' in self.data else None,
+
                 "Y Acceleration": self.data['Y Acceleration'].tolist(),
                 "X Acceleration": self.data['X Acceleration'].tolist(),
                 "Y Acceleration": self.data['Y Acceleration'].tolist(),
-                "Acceleration No Smooth" if 'acceleration_no_smooth' in self.data else None: self.data['Acceleration No Smooth'].tolist(),
                 "Acceleration": self.data['Acceleration'].tolist(),
             },
             "metrics_info":
@@ -275,29 +336,34 @@ class Point:
                 "Displacement": {"Unit": "Meter"} if self.calibrationHelper['x_meter_per_pixel'] is not None and self.calibrationHelper['y_meter_per_pixel'] is not None else {"Unit": "Pixel"},  
 
                 # speed
-                "X Speed No Smooth" if 'X Speed No Smooth' in self.data else None: {"Unit": "Pixel/s" if self.calibrationHelper['x_meter_per_pixel'] is None else "Meter/s"},
-                "Y Speed No Smooth" if 'Y Speed No Smooth' in self.data else None: {"Unit": "Pixel/s" if self.calibrationHelper['y_meter_per_pixel'] is None else "Meter/s"},
                 "X Speed": {"Unit": "Pixel/s"} if self.calibrationHelper['x_meter_per_pixel'] is None else {"Unit": "Meter/s"},
                 "Y Speed": {"Unit": "Pixel/s" if self.calibrationHelper['y_meter_per_pixel'] is None else "Meter/s"},
-                "Speed No Smooth" if 'Speed No Smooth' in self.data else None: {"Unit": "Pixel/s" if self.calibrationHelper['x_meter_per_pixel'] is None and self.calibrationHelper['y_meter_per_pixel'] is None else "Meter/s"},
                 "Speed": {"Unit": "Pixel/s" if self.calibrationHelper['x_meter_per_pixel'] is None and self.calibrationHelper['y_meter_per_pixel'] is not None else "Meter/s"},
+                # add in speed filter and speed smooth
+                "X Speed Filter" if "X Speed Filter" in self.data else None: {"Unit": "Pixel/s"} if self.calibrationHelper['x_meter_per_pixel'] is None else {"Unit": "Meter/s"},
+                "Y Speed Filter" if "Y Speed Filter" in self.data else None: {"Unit": "Pixel/s" if self.calibrationHelper['y_meter_per_pixel'] is None else "Meter/s"},
+                "Speed Filter" if "Speed Filter" in self.data else None: {"Unit": "Pixel/s" if self.calibrationHelper['x_meter_per_pixel'] is None and self.calibrationHelper['y_meter_per_pixel'] is None else "Meter/s"},
+                "X Speed Smooth" if "X Speed Smooth" in self.data else None: {"Unit": "Pixel/s"} if self.calibrationHelper['x_meter_per_pixel'] is None else {"Unit": "Meter/s"},
+                "Y Speed Smooth" if "Y Speed Smooth" in self.data else None: {"Unit": "Pixel/s" if self.calibrationHelper['y_meter_per_pixel'] is None else "Meter/s"},
+                "Speed Smooth" if "Speed Smooth" in self.data else None: {"Unit": "Pixel/s" if self.calibrationHelper['x_meter_per_pixel'] is None and self.calibrationHelper['y_meter_per_pixel'] is None else "Meter/s"},
 
                 # acceleration
-                "X Acceleration No Smooth" if 'X Acceleration No Smooth' in self.data else None: {"Unit": "Pixel/s^2" if self.calibrationHelper['x_meter_per_pixel'] is None else "Meter/s^2"},
-                "Y Acceleration No Smooth" if 'Y Acceleration No Smooth' in self.data else None: {"Unit": "Pixel/s^2" if self.calibrationHelper['y_meter_per_pixel'] is None else "Meter/s^2"},
                 "X Acceleration": {"Unit": "Pixel/s^2" if self.calibrationHelper['x_meter_per_pixel'] is None else "Meter/s^2"},
                 "Y Acceleration": {"Unit": "Pixel/s^2" if self.calibrationHelper['y_meter_per_pixel'] is None else "Meter/s^2"},
                 "Acceleration No Smooth" if 'Acceleration No Smooth' in self.data else None: {"Unit": "Pixel/s^2" if self.calibrationHelper['x_meter_per_pixel'] is None and self.calibrationHelper['y_meter_per_pixel'] is None else "Meter/s^2"},
                 "Acceleration": {"Unit": "Pixel/s^2" if self.calibrationHelper['x_meter_per_pixel'] is None and self.calibrationHelper['y_meter_per_pixel'] is None else "Meter/s^2"},
+                # add in acceleration filter and acceleration smooth
+                "X Acceleration Filter" if "X Acceleration Filter" in self.data else None: {"Unit": "Pixel/s^2" if self.calibrationHelper['x_meter_per_pixel'] is None else "Meter/s^2"},
+                "Y Acceleration Filter" if "Y Acceleration Filter" in self.data else None: {"Unit": "Pixel/s^2" if self.calibrationHelper['y_meter_per_pixel'] is None else "Meter/s^2"},
+                "Acceleration Filter" if "Acceleration Filter" in self.data else None: {"Unit": "Pixel/s^2" if self.calibrationHelper['x_meter_per_pixel'] is None and self.calibrationHelper['y_meter_per_pixel'] is None else "Meter/s^2"},
 
             },
             "time": [i / self.calibrationHelper['fps'] for i in range(self.calibrationHelper['num_frames'])]
         }
         if None in data['metrics']:
-            if None in data['metrics']:
-                del data['metrics'][None] 
-            if None in data['metrics_info']:
-                del data['metrics_info'][None]  
+            del data['metrics'][None] 
+        if None in data['metrics_info']:
+            del data['metrics_info'][None]  
         return data
 
     def export_metrics(self, human_dir):
@@ -307,7 +373,8 @@ class Point:
             name = self.point_name
         # export json
         json_output = self.get_metrics()
-        json_file = Path(human_dir) / f"{name}.json"
+        json_file = Path(human_dir) / get_time()
+        json_file = json_file / f"{name}.json"
         json_file.parent.mkdir(parents=True, exist_ok=True)
         with open(json_file, "w") as f:
             json.dump(json_output, f, indent=4)
