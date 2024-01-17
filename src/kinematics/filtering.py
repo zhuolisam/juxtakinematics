@@ -1,7 +1,6 @@
 import math
 
 import numpy as np
-from scipy.signal import butter, lfilter
 
 
 class ButterworthFilter:
@@ -31,14 +30,16 @@ class ButterworthFilter:
                 result = FilteringResult(fc, filtered, dw_normalized)
                 filtered_results.append(result)
 
-                if best_cutoff_index == -1 or dw_normalized < filtered_results[best_cutoff_index].dw_normalized:
+                if (
+                    best_cutoff_index == -1
+                    or dw_normalized < filtered_results[best_cutoff_index].dw_normalized
+                ):
                     best_cutoff_index = len(filtered_results) - 1
 
         return filtered_results, best_cutoff_index
 
     def update_correction_factor(self, passes):
-        self.correction_factor = math.pow(
-            (math.pow(2, 1.0 / passes) - 1), 0.25)
+        self.correction_factor = math.pow((math.pow(2, 1.0 / passes) - 1), 0.25)
 
     def update_coefficients(self, fs, fc):
         o = math.tan(math.pi * fc / fs) / self.correction_factor
@@ -88,8 +89,13 @@ class ButterworthFilter:
     def filter_sample(self, sample):
         self.x2, self.x1, self.x0 = self.x1, self.x0, sample
         self.y2, self.y1 = self.y1, self.y0
-        self.y0 = self.a0 * self.x0 + self.a1 * self.x1 + \
-            self.a2 * self.x2 + self.b1 * self.y1 + self.b2 * self.y2
+        self.y0 = (
+            self.a0 * self.x0
+            + self.a1 * self.x1
+            + self.a2 * self.x2
+            + self.b1 * self.y1
+            + self.b2 * self.y2
+        )
         return self.y0
 
     def add_padding(self, samples, padding):
@@ -99,8 +105,9 @@ class ButterworthFilter:
         for i in range(len(samples)):
             padded[padding + i] = samples[i]
         for i in range(padding):
-            padded[padding + len(samples) + i] = samples[-1] + \
-                samples[-1] - samples[len(samples) - 2 - i]
+            padded[padding + len(samples) + i] = (
+                samples[-1] + samples[-1] - samples[len(samples) - 2 - i]
+            )
         return padded
 
     def remove_padding(self, samples, padding):
@@ -108,8 +115,8 @@ class ButterworthFilter:
 
     def durbin_watson(self, residuals):
         diff = np.diff(residuals)
-        numerator = sum(diff ** 2)
-        denominator = sum(residuals ** 2)
+        numerator = sum(diff**2)
+        denominator = sum(residuals**2)
         dw = numerator / denominator
         return dw
 
@@ -150,12 +157,14 @@ class FilteredTrajectory:
             tests = 100
             best_cutoff_index_x = 0
             self.filter_result_xs, best_cutoff_index_x = filter.filter_samples(
-                self.raw_xs, framerate, tests)
+                self.raw_xs, framerate, tests
+            )
             self.x_cutoff_index = best_cutoff_index_x
 
             best_cutoff_index_y = 0
             self.filter_result_ys, best_cutoff_index_y = filter.filter_samples(
-                self.raw_ys, framerate, tests)
+                self.raw_ys, framerate, tests
+            )
             self.y_cutoff_index = best_cutoff_index_y
 
         # I ADDED THIS 3 LINES TO GET THE FILTERED DATA
@@ -174,7 +183,7 @@ class FilteredTrajectory:
         # TODO: Calculate the best fit circle here if needed
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Create an instance of FilteredTrajectory
     trajectory = FilteredTrajectory()
 

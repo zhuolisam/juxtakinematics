@@ -1,3 +1,4 @@
+import collections
 from io import BytesIO, StringIO
 
 import numpy as np
@@ -44,21 +45,35 @@ import numpy as np
 # }
 
 
-class Test:
-    def __init__(self):
-        self.a = 1
-        self.b = 2
-        self.c = 3
+# class Test:
+#     def __init__(self):
+#         self.a = 1
+#         self.b = 2
+#         self.c = 3
 
-    # def __getattr__(self, __name: str):
-    #     return self.__name
+#     # def __getattr__(self, __name: str):
+#     #     return self.__name
 
-    def test(self):
-        return self.a
+#     def test(self):
+#         return self.a
 
-    def check_attr(self, what):
-        return hasattr(self, what)
+#     def check_attr(self, what):
+#         return hasattr(self, what)
 
 
-testClass = Test()
-print('answer is: ', testClass.check_attr('a'))
+# testArr = np.array([np.nan, np.nan])
+# print(np.isnan(testArr).all())
+
+hello = "abc"
+hello = collections.Counter(hello)
+print(hello["t"])
+
+hello2 = collections.defaultdict(int)
+hello2["a"] == 0
+print(hello2["b"])
+
+hello3 = {
+    "a": 1,
+}
+
+print(hello3.get("b", 0))
