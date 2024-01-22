@@ -154,7 +154,7 @@ class FilteredTrajectory:
 
             filter = ButterworthFilter()
 
-            tests = 100
+            tests = 10
             best_cutoff_index_x = 0
             self.filter_result_xs, best_cutoff_index_x = filter.filter_samples(
                 self.raw_xs, framerate, tests
@@ -194,5 +194,3 @@ if __name__ == "__main__":
 
     x_data = trajectory.filter_result_xs[trajectory.x_cutoff_index].data
     y_data = trajectory.filter_result_ys[trajectory.y_cutoff_index].data
-    print(x_data)
-    print(y_data)

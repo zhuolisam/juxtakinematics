@@ -10,7 +10,7 @@ from scipy import interpolate
 from .constants import BODY_JOINTS_MAP
 from .filtering import FilteredTrajectory
 from .smoothing import MovingAverage
-from .utils import buildComponent, get_time
+from .utils import get_time
 
 PointMetrics = [
     "X",
@@ -82,9 +82,8 @@ class Point:
         )
         self.filter = FilteredTrajectory()
 
+    # SETUP
     def initWithEmptyFrames(self, num_frames, fps):
-        assert num_frames > 0, "Number of frames must be greater than 0"
-        self.data = buildComponent(num_frames, PointMetrics)
         self.data["Raw Ori X"] = np.full(num_frames, np.nan)
         self.data["Raw Ori Y"] = np.full(num_frames, np.nan)
         self.calibrationHelper["num_frames"] = num_frames
@@ -95,13 +94,9 @@ class Point:
         ), (
             f"Expected 2 coordinates, got {len(data[0])}"
         )  # Assert data has two coordinates
-        self.data = buildComponent(len(data), PointMetrics)
         self.data["Raw Ori X"] = np.array(data)[:, 0]
         self.data["Raw Ori Y"] = np.array(data)[:, 1]
         self.calibrationHelper["num_frames"] = len(data)
-
-    # def __getattr__(self, __name: str) -> Any:
-    #     return self.__name
 
     def __getitem__(self, __name: str) -> Any:
         return self.__dict__[__name]
@@ -249,6 +244,10 @@ class Point:
             - self.data["Y"][self.start_index]
         ) * self.calibrationHelper["y_meter_per_pixel"]
 
+        self.data["X Displacement"] = self.data["X"].copy()
+        self.data["Y Displacement"] = self.data["Y"].copy()
+        self.data["Displacement"] = self.data["X"].copy()
+
         self.data["X Displacement"][
             self.start_index : self.end_index + 1
         ] = x_displacement
@@ -277,6 +276,10 @@ class Point:
             )
             / time_diff
         )
+
+        self.data["X Speed"] = self.data["X Displacement"].copy()
+        self.data["Y Speed"] = self.data["Y Displacement"].copy()
+        self.data["Speed"] = self.data["Displacement"].copy()
 
         self.data["X Speed"][self.start_index : self.end_index + 1] = x_speed
         self.data["Y Speed"][self.start_index : self.end_index + 1] = y_speed
@@ -308,8 +311,6 @@ class Point:
         if smoothing_on:
             self.data["X Speed Smooth"] = self.data["X Speed"]
             self.data["Y Speed Smooth"] = self.data["Y Speed"]
-            print(self.data["X Speed Smooth"])
-            print(self.data["Y Speed Smooth"])
             # Apply smoothing
             self.data["X Speed Smooth"][
                 self.start_index : self.end_index + 1
@@ -331,8 +332,6 @@ class Point:
                 self.data["X Speed Smooth"] ** 2 + self.data["Y Speed Smooth"] ** 2
             )
 
-            print(self.data["X Speed Smooth"])
-            print(self.data["Y Speed Smooth"])
             # Replace the speed with the filtered speed
             self.data["X Speed"] = self.data["X Speed Smooth"]
             self.data["Y Speed"] = self.data["Y Speed Smooth"]
@@ -355,6 +354,10 @@ class Point:
             )
             / time_diff
         )
+
+        self.data["X Acceleration"] = self.data["X Speed"].copy()
+        self.data["Y Acceleration"] = self.data["Y Speed"].copy()
+        self.data["Acceleration"] = self.data["Speed"].copy()
 
         self.data["X Acceleration"][self.start_index : self.end_index + 1] = x_accel
         self.data["Y Acceleration"][self.start_index : self.end_index + 1] = y_accel
@@ -426,273 +429,37 @@ class Point:
             self.data["Y Acceleration"] = self.data["Y Acceleration Smooth"]
             self.data["Acceleration"] = self.data["Acceleration Smooth"]
 
+    # SETTERS
+    def append_empty_frames(self, frames=1):
+        self.data["Raw Ori X"] = np.append(
+            self.data["Raw Ori X"], np.full(frames, np.nan)
+        )
+        self.data["Raw Ori Y"] = np.append(
+            self.data["Raw Ori Y"], np.full(frames, np.nan)
+        )
+        # update num_frames
+        self.calibrationHelper["num_frames"] = len(self.data["Raw Ori X"])
+
+    def append_points(self, data):
+        assert len(data) == 2, f"Expected 2 coordinates, got {len(data)}"
+        data = np.array(data)
+        self.data["Raw Ori X"] = np.append(self.data["Raw Ori X"], data[0])
+        self.data["Raw Ori Y"] = np.append(self.data["Raw Ori Y"], data[1])
+        # update num_frames
+        self.calibrationHelper["num_frames"] = len(self.data["Raw Ori X"])
+
+    def set_frame_point(self, index, x, y):
+        self.data["Raw Ori X"][index] = x
+        self.data["Raw Ori Y"][index] = y
+        return
+
+    # GETTERS
     def get_metrics(self):
         data = {
-            "metadata": {
-                "x_meter_per_pixel": self.calibrationHelper["x_meter_per_pixel"],
-                "y_meter_per_pixel": self.calibrationHelper["y_meter_per_pixel"],
-                "fps": self.calibrationHelper["fps"],
-                "point_idx": self.point_idx,
-                "num_frames": self.calibrationHelper["num_frames"],
-                "name": self.point_name
-                if self.point_name
-                else BODY_JOINTS_MAP[self.point_idx]
-                if self.point_idx is not None
-                else None,
-                "start_index": self.start_index,
-                "end_index": self.end_index,
-            },
-            "metrics":
+            "metadata": self.get_metadata(),
+            "metrics": self.get_metrics_data(),
             # { key: value.tolist() for key, value in self.data.items()},
-            {
-                # coordinate
-                "Raw Ori X": self.data["Raw Ori X"].tolist(),
-                "Raw Ori Y": self.data["Raw Ori Y"].tolist(),
-                "Raw Ori X Interpolate"
-                if "Raw Ori X Interpolate" in self.data
-                else None: self.data["Raw Ori X Interpolate"].tolist()
-                if "Raw Ori X Interpolate" in self.data
-                else None,
-                "Raw Ori Y Interpolate"
-                if "Raw Ori Y Interpolate" in self.data
-                else None: self.data["Raw Ori Y Interpolate"].tolist()
-                if "Raw Ori Y Interpolate" in self.data
-                else None,
-                "Raw Ori X Filter"
-                if "Raw Ori X Filter" in self.data
-                else None: self.data["Raw Ori X Filter"].tolist()
-                if "Raw Ori X Filter" in self.data
-                else None,
-                "Raw Ori Y Filter"
-                if "Raw Ori Y Filter" in self.data
-                else None: self.data["Raw Ori Y Filter"].tolist()
-                if "Raw Ori Y Filter" in self.data
-                else None,
-                "Raw Ori X Smooth"
-                if "Raw Ori X Smooth" in self.data
-                else None: self.data["Raw Ori X Smooth"].tolist()
-                if "Raw Ori X Smooth" in self.data
-                else None,
-                "Raw Ori Y Smooth"
-                if "Raw Ori Y Smooth" in self.data
-                else None: self.data["Raw Ori Y Smooth"].tolist()
-                if "Raw Ori Y Smooth" in self.data
-                else None,
-                "X": self.data["X"].tolist(),
-                "Y": self.data["Y"].tolist(),
-                # displacement
-                "X Displacement": self.data["X Displacement"].tolist(),
-                "Y Displacement": self.data["Y Displacement"].tolist(),
-                "Displacement": self.data["Displacement"].tolist(),
-                # speed
-                "X Speed Raw": self.data["X Speed Raw"].tolist(),
-                "Y Speed Raw": self.data["Y Speed Raw"].tolist(),
-                "Speed Raw": self.data["Speed Raw"].tolist(),
-                "X Speed Filter" if "X Speed Filter" in self.data else None: self.data[
-                    "X Speed Filter"
-                ].tolist()
-                if "X Speed Filter" in self.data
-                else None,
-                "Y Speed Filter" if "Y Speed Filter" in self.data else None: self.data[
-                    "Y Speed Filter"
-                ].tolist()
-                if "Y Speed Filter" in self.data
-                else None,
-                "Speed Filter" if "Speed Filter" in self.data else None: self.data[
-                    "Speed Filter"
-                ].tolist()
-                if "Speed Filter" in self.data
-                else None,
-                "Y Speed Smooth" if "Y Speed Smooth" in self.data else None: self.data[
-                    "Y Speed Smooth"
-                ].tolist()
-                if "Y Speed Smooth" in self.data
-                else None,
-                "X Speed Smooth" if "X Speed Smooth" in self.data else None: self.data[
-                    "X Speed Smooth"
-                ].tolist()
-                if "X Speed Smooth" in self.data
-                else None,
-                "Speed Smooth" if "Speed Smooth" in self.data else None: self.data[
-                    "Speed Smooth"
-                ].tolist()
-                if "Speed Smooth" in self.data
-                else None,
-                "X Speed": self.data["X Speed"].tolist(),
-                "Y Speed": self.data["Y Speed"].tolist(),
-                "Speed": self.data["Speed"].tolist(),
-                # acceleration
-                "X Acceleration Raw": self.data["X Acceleration Raw"].tolist(),
-                "Y Acceleration Raw": self.data["Y Acceleration Raw"].tolist(),
-                "Acceleration Raw": self.data["Acceleration Raw"].tolist(),
-                "X Acceleration Filter"
-                if "X Acceleration Filter" in self.data
-                else None: self.data["X Acceleration Filter"].tolist()
-                if "X Acceleration Filter" in self.data
-                else None,
-                "Y Acceleration Filter"
-                if "Y Acceleration Filter" in self.data
-                else None: self.data["Y Acceleration Filter"].tolist()
-                if "Y Acceleration Filter" in self.data
-                else None,
-                "Acceleration Filter"
-                if "Acceleration Filter" in self.data
-                else None: self.data["Acceleration Filter"].tolist()
-                if "Acceleration Filter" in self.data
-                else None,
-                "X Acceleration Smooth"
-                if "X Acceleration Smooth" in self.data
-                else None: self.data["X Acceleration Smooth"].tolist()
-                if "X Acceleration Smooth" in self.data
-                else None,
-                "Y Acceleration Smooth"
-                if "Y Acceleration Smooth" in self.data
-                else None: self.data["Y Acceleration Smooth"].tolist()
-                if "Y Acceleration Smooth" in self.data
-                else None,
-                "Acceleration Smooth"
-                if "Acceleration Smooth" in self.data
-                else None: self.data["Acceleration Smooth"].tolist()
-                if "Acceleration Smooth" in self.data
-                else None,
-                "X Acceleration": self.data["X Acceleration"].tolist(),
-                "Y Acceleration": self.data["Y Acceleration"].tolist(),
-                "Acceleration": self.data["Acceleration"].tolist(),
-            },
-            "metrics_info": {
-                # coordinate
-                "Raw Ori X": {"Unit": "Pixel"},
-                "Raw Ori Y": {"Unit": "Pixel"},
-                "Raw Ori X Interpolate"
-                if "Raw Ori X Interpolate" in self.data
-                else None: {"Unit": "Pixel"},
-                "Raw Ori Y Interpolate"
-                if "Raw Ori Y Interpolate" in self.data
-                else None: {"Unit": "Pixel"},
-                "Raw Ori X Filter" if "Raw Ori X Filter" in self.data else None: {
-                    "Unit": "Pixel"
-                },
-                "Raw Ori Y Filter" if "Raw Ori Y Filter" in self.data else None: {
-                    "Unit": "Pixel"
-                },
-                "Raw Ori X Smooth" if "Raw Ori X Smooth" in self.data else None: {
-                    "Unit": "Pixel"
-                },
-                "Raw Ori Y Smooth" if "Raw Ori Y Smooth" in self.data else None: {
-                    "Unit": "Pixel"
-                },
-                "X": {"Unit": "Pixel"},
-                "Y": {"Unit": "Pixel"},
-                # displacement
-                "X Displacement": {
-                    "Unit": "Meter"
-                    if self.calibrationHelper["x_meter_per_pixel"] is not None
-                    else "Pixel"
-                },
-                "Y Displacement": {
-                    "Unit": "Meter"
-                    if self.calibrationHelper["y_meter_per_pixel"] is not None
-                    else "Pixel"
-                },
-                "Displacement": {"Unit": "Meter"}
-                if self.calibrationHelper["x_meter_per_pixel"] is not None
-                and self.calibrationHelper["y_meter_per_pixel"] is not None
-                else {"Unit": "Pixel"},
-                # speed
-                "X Speed": {"Unit": "Pixel/s"}
-                if self.calibrationHelper["x_meter_per_pixel"] is None
-                else {"Unit": "Meter/s"},
-                "Y Speed": {
-                    "Unit": "Pixel/s"
-                    if self.calibrationHelper["y_meter_per_pixel"] is None
-                    else "Meter/s"
-                },
-                "Speed": {
-                    "Unit": "Pixel/s"
-                    if self.calibrationHelper["x_meter_per_pixel"] is None
-                    and self.calibrationHelper["y_meter_per_pixel"] is not None
-                    else "Meter/s"
-                },
-                # add in speed filter and speed smooth
-                "X Speed Filter" if "X Speed Filter" in self.data else None: {
-                    "Unit": "Pixel/s"
-                }
-                if self.calibrationHelper["x_meter_per_pixel"] is None
-                else {"Unit": "Meter/s"},
-                "Y Speed Filter" if "Y Speed Filter" in self.data else None: {
-                    "Unit": "Pixel/s"
-                    if self.calibrationHelper["y_meter_per_pixel"] is None
-                    else "Meter/s"
-                },
-                "Speed Filter" if "Speed Filter" in self.data else None: {
-                    "Unit": "Pixel/s"
-                    if self.calibrationHelper["x_meter_per_pixel"] is None
-                    and self.calibrationHelper["y_meter_per_pixel"] is None
-                    else "Meter/s"
-                },
-                "X Speed Smooth" if "X Speed Smooth" in self.data else None: {
-                    "Unit": "Pixel/s"
-                }
-                if self.calibrationHelper["x_meter_per_pixel"] is None
-                else {"Unit": "Meter/s"},
-                "Y Speed Smooth" if "Y Speed Smooth" in self.data else None: {
-                    "Unit": "Pixel/s"
-                    if self.calibrationHelper["y_meter_per_pixel"] is None
-                    else "Meter/s"
-                },
-                "Speed Smooth" if "Speed Smooth" in self.data else None: {
-                    "Unit": "Pixel/s"
-                    if self.calibrationHelper["x_meter_per_pixel"] is None
-                    and self.calibrationHelper["y_meter_per_pixel"] is None
-                    else "Meter/s"
-                },
-                # acceleration
-                "X Acceleration": {
-                    "Unit": "Pixel/s^2"
-                    if self.calibrationHelper["x_meter_per_pixel"] is None
-                    else "Meter/s^2"
-                },
-                "Y Acceleration": {
-                    "Unit": "Pixel/s^2"
-                    if self.calibrationHelper["y_meter_per_pixel"] is None
-                    else "Meter/s^2"
-                },
-                "Acceleration No Smooth"
-                if "Acceleration No Smooth" in self.data
-                else None: {
-                    "Unit": "Pixel/s^2"
-                    if self.calibrationHelper["x_meter_per_pixel"] is None
-                    and self.calibrationHelper["y_meter_per_pixel"] is None
-                    else "Meter/s^2"
-                },
-                "Acceleration": {
-                    "Unit": "Pixel/s^2"
-                    if self.calibrationHelper["x_meter_per_pixel"] is None
-                    and self.calibrationHelper["y_meter_per_pixel"] is None
-                    else "Meter/s^2"
-                },
-                # add in acceleration filter and acceleration smooth
-                "X Acceleration Filter"
-                if "X Acceleration Filter" in self.data
-                else None: {
-                    "Unit": "Pixel/s^2"
-                    if self.calibrationHelper["x_meter_per_pixel"] is None
-                    else "Meter/s^2"
-                },
-                "Y Acceleration Filter"
-                if "Y Acceleration Filter" in self.data
-                else None: {
-                    "Unit": "Pixel/s^2"
-                    if self.calibrationHelper["y_meter_per_pixel"] is None
-                    else "Meter/s^2"
-                },
-                "Acceleration Filter" if "Acceleration Filter" in self.data else None: {
-                    "Unit": "Pixel/s^2"
-                    if self.calibrationHelper["x_meter_per_pixel"] is None
-                    and self.calibrationHelper["y_meter_per_pixel"] is None
-                    else "Meter/s^2"
-                },
-            },
+            "metrics_info": self.get_metrics_info(),
             "time": [
                 i / self.calibrationHelper["fps"]
                 for i in range(self.calibrationHelper["num_frames"])
@@ -704,6 +471,275 @@ class Point:
             del data["metrics_info"][None]
         return data
 
+    def get_frame_point(self, index):
+        return self.data["Raw Ori X"][index], self.data["Raw Ori Y"][index]
+
+    def get_metadata(self):
+        return {
+            "x_meter_per_pixel": self.calibrationHelper["x_meter_per_pixel"],
+            "y_meter_per_pixel": self.calibrationHelper["y_meter_per_pixel"],
+            "fps": self.calibrationHelper["fps"],
+            "point_idx": self.point_idx,
+            "num_frames": self.calibrationHelper["num_frames"],
+            "name": self.point_name
+            if self.point_name
+            else BODY_JOINTS_MAP[self.point_idx]
+            if self.point_idx is not None
+            else None,
+            "start_index": self.start_index,
+            "end_index": self.end_index,
+        }
+
+    def get_metrics_data(self):
+        return {
+            # coordinate
+            "Raw Ori X": self.data["Raw Ori X"].tolist(),
+            "Raw Ori Y": self.data["Raw Ori Y"].tolist(),
+            "Raw Ori X Interpolate"
+            if "Raw Ori X Interpolate" in self.data
+            else None: self.data["Raw Ori X Interpolate"].tolist()
+            if "Raw Ori X Interpolate" in self.data
+            else None,
+            "Raw Ori Y Interpolate"
+            if "Raw Ori Y Interpolate" in self.data
+            else None: self.data["Raw Ori Y Interpolate"].tolist()
+            if "Raw Ori Y Interpolate" in self.data
+            else None,
+            "Raw Ori X Filter" if "Raw Ori X Filter" in self.data else None: self.data[
+                "Raw Ori X Filter"
+            ].tolist()
+            if "Raw Ori X Filter" in self.data
+            else None,
+            "Raw Ori Y Filter" if "Raw Ori Y Filter" in self.data else None: self.data[
+                "Raw Ori Y Filter"
+            ].tolist()
+            if "Raw Ori Y Filter" in self.data
+            else None,
+            "Raw Ori X Smooth" if "Raw Ori X Smooth" in self.data else None: self.data[
+                "Raw Ori X Smooth"
+            ].tolist()
+            if "Raw Ori X Smooth" in self.data
+            else None,
+            "Raw Ori Y Smooth" if "Raw Ori Y Smooth" in self.data else None: self.data[
+                "Raw Ori Y Smooth"
+            ].tolist()
+            if "Raw Ori Y Smooth" in self.data
+            else None,
+            "X": self.data["X"].tolist(),
+            "Y": self.data["Y"].tolist(),
+            # displacement
+            "X Displacement": self.data["X Displacement"].tolist(),
+            "Y Displacement": self.data["Y Displacement"].tolist(),
+            "Displacement": self.data["Displacement"].tolist(),
+            # speed
+            "X Speed Raw": self.data["X Speed Raw"].tolist(),
+            "Y Speed Raw": self.data["Y Speed Raw"].tolist(),
+            "Speed Raw": self.data["Speed Raw"].tolist(),
+            "X Speed Filter" if "X Speed Filter" in self.data else None: self.data[
+                "X Speed Filter"
+            ].tolist()
+            if "X Speed Filter" in self.data
+            else None,
+            "Y Speed Filter" if "Y Speed Filter" in self.data else None: self.data[
+                "Y Speed Filter"
+            ].tolist()
+            if "Y Speed Filter" in self.data
+            else None,
+            "Speed Filter" if "Speed Filter" in self.data else None: self.data[
+                "Speed Filter"
+            ].tolist()
+            if "Speed Filter" in self.data
+            else None,
+            "Y Speed Smooth" if "Y Speed Smooth" in self.data else None: self.data[
+                "Y Speed Smooth"
+            ].tolist()
+            if "Y Speed Smooth" in self.data
+            else None,
+            "X Speed Smooth" if "X Speed Smooth" in self.data else None: self.data[
+                "X Speed Smooth"
+            ].tolist()
+            if "X Speed Smooth" in self.data
+            else None,
+            "Speed Smooth" if "Speed Smooth" in self.data else None: self.data[
+                "Speed Smooth"
+            ].tolist()
+            if "Speed Smooth" in self.data
+            else None,
+            "X Speed": self.data["X Speed"].tolist(),
+            "Y Speed": self.data["Y Speed"].tolist(),
+            "Speed": self.data["Speed"].tolist(),
+            # acceleration
+            "X Acceleration Raw": self.data["X Acceleration Raw"].tolist(),
+            "Y Acceleration Raw": self.data["Y Acceleration Raw"].tolist(),
+            "Acceleration Raw": self.data["Acceleration Raw"].tolist(),
+            "X Acceleration Filter"
+            if "X Acceleration Filter" in self.data
+            else None: self.data["X Acceleration Filter"].tolist()
+            if "X Acceleration Filter" in self.data
+            else None,
+            "Y Acceleration Filter"
+            if "Y Acceleration Filter" in self.data
+            else None: self.data["Y Acceleration Filter"].tolist()
+            if "Y Acceleration Filter" in self.data
+            else None,
+            "Acceleration Filter"
+            if "Acceleration Filter" in self.data
+            else None: self.data["Acceleration Filter"].tolist()
+            if "Acceleration Filter" in self.data
+            else None,
+            "X Acceleration Smooth"
+            if "X Acceleration Smooth" in self.data
+            else None: self.data["X Acceleration Smooth"].tolist()
+            if "X Acceleration Smooth" in self.data
+            else None,
+            "Y Acceleration Smooth"
+            if "Y Acceleration Smooth" in self.data
+            else None: self.data["Y Acceleration Smooth"].tolist()
+            if "Y Acceleration Smooth" in self.data
+            else None,
+            "Acceleration Smooth"
+            if "Acceleration Smooth" in self.data
+            else None: self.data["Acceleration Smooth"].tolist()
+            if "Acceleration Smooth" in self.data
+            else None,
+            "X Acceleration": self.data["X Acceleration"].tolist(),
+            "Y Acceleration": self.data["Y Acceleration"].tolist(),
+            "Acceleration": self.data["Acceleration"].tolist(),
+        }
+
+    def get_metrics_info(self):
+        return {
+            # coordinate
+            "Raw Ori X": {"Unit": "Pixel"},
+            "Raw Ori Y": {"Unit": "Pixel"},
+            "Raw Ori X Interpolate" if "Raw Ori X Interpolate" in self.data else None: {
+                "Unit": "Pixel"
+            },
+            "Raw Ori Y Interpolate" if "Raw Ori Y Interpolate" in self.data else None: {
+                "Unit": "Pixel"
+            },
+            "Raw Ori X Filter" if "Raw Ori X Filter" in self.data else None: {
+                "Unit": "Pixel"
+            },
+            "Raw Ori Y Filter" if "Raw Ori Y Filter" in self.data else None: {
+                "Unit": "Pixel"
+            },
+            "Raw Ori X Smooth" if "Raw Ori X Smooth" in self.data else None: {
+                "Unit": "Pixel"
+            },
+            "Raw Ori Y Smooth" if "Raw Ori Y Smooth" in self.data else None: {
+                "Unit": "Pixel"
+            },
+            "X": {"Unit": "Pixel"},
+            "Y": {"Unit": "Pixel"},
+            # displacement
+            "X Displacement": {
+                "Unit": "Meter"
+                if self.calibrationHelper["x_meter_per_pixel"] is not None
+                else "Pixel"
+            },
+            "Y Displacement": {
+                "Unit": "Meter"
+                if self.calibrationHelper["y_meter_per_pixel"] is not None
+                else "Pixel"
+            },
+            "Displacement": {"Unit": "Meter"}
+            if self.calibrationHelper["x_meter_per_pixel"] is not None
+            and self.calibrationHelper["y_meter_per_pixel"] is not None
+            else {"Unit": "Pixel"},
+            # speed
+            "X Speed": {"Unit": "Pixel/s"}
+            if self.calibrationHelper["x_meter_per_pixel"] is None
+            else {"Unit": "Meter/s"},
+            "Y Speed": {
+                "Unit": "Pixel/s"
+                if self.calibrationHelper["y_meter_per_pixel"] is None
+                else "Meter/s"
+            },
+            "Speed": {
+                "Unit": "Pixel/s"
+                if self.calibrationHelper["x_meter_per_pixel"] is None
+                and self.calibrationHelper["y_meter_per_pixel"] is not None
+                else "Meter/s"
+            },
+            # add in speed filter and speed smooth
+            "X Speed Filter" if "X Speed Filter" in self.data else None: {
+                "Unit": "Pixel/s"
+            }
+            if self.calibrationHelper["x_meter_per_pixel"] is None
+            else {"Unit": "Meter/s"},
+            "Y Speed Filter" if "Y Speed Filter" in self.data else None: {
+                "Unit": "Pixel/s"
+                if self.calibrationHelper["y_meter_per_pixel"] is None
+                else "Meter/s"
+            },
+            "Speed Filter" if "Speed Filter" in self.data else None: {
+                "Unit": "Pixel/s"
+                if self.calibrationHelper["x_meter_per_pixel"] is None
+                and self.calibrationHelper["y_meter_per_pixel"] is None
+                else "Meter/s"
+            },
+            "X Speed Smooth" if "X Speed Smooth" in self.data else None: {
+                "Unit": "Pixel/s"
+            }
+            if self.calibrationHelper["x_meter_per_pixel"] is None
+            else {"Unit": "Meter/s"},
+            "Y Speed Smooth" if "Y Speed Smooth" in self.data else None: {
+                "Unit": "Pixel/s"
+                if self.calibrationHelper["y_meter_per_pixel"] is None
+                else "Meter/s"
+            },
+            "Speed Smooth" if "Speed Smooth" in self.data else None: {
+                "Unit": "Pixel/s"
+                if self.calibrationHelper["x_meter_per_pixel"] is None
+                and self.calibrationHelper["y_meter_per_pixel"] is None
+                else "Meter/s"
+            },
+            # acceleration
+            "X Acceleration": {
+                "Unit": "Pixel/s^2"
+                if self.calibrationHelper["x_meter_per_pixel"] is None
+                else "Meter/s^2"
+            },
+            "Y Acceleration": {
+                "Unit": "Pixel/s^2"
+                if self.calibrationHelper["y_meter_per_pixel"] is None
+                else "Meter/s^2"
+            },
+            "Acceleration No Smooth"
+            if "Acceleration No Smooth" in self.data
+            else None: {
+                "Unit": "Pixel/s^2"
+                if self.calibrationHelper["x_meter_per_pixel"] is None
+                and self.calibrationHelper["y_meter_per_pixel"] is None
+                else "Meter/s^2"
+            },
+            "Acceleration": {
+                "Unit": "Pixel/s^2"
+                if self.calibrationHelper["x_meter_per_pixel"] is None
+                and self.calibrationHelper["y_meter_per_pixel"] is None
+                else "Meter/s^2"
+            },
+            # add in acceleration filter and acceleration smooth
+            "X Acceleration Filter" if "X Acceleration Filter" in self.data else None: {
+                "Unit": "Pixel/s^2"
+                if self.calibrationHelper["x_meter_per_pixel"] is None
+                else "Meter/s^2"
+            },
+            "Y Acceleration Filter" if "Y Acceleration Filter" in self.data else None: {
+                "Unit": "Pixel/s^2"
+                if self.calibrationHelper["y_meter_per_pixel"] is None
+                else "Meter/s^2"
+            },
+            "Acceleration Filter" if "Acceleration Filter" in self.data else None: {
+                "Unit": "Pixel/s^2"
+                if self.calibrationHelper["x_meter_per_pixel"] is None
+                and self.calibrationHelper["y_meter_per_pixel"] is None
+                else "Meter/s^2"
+            },
+        }
+
+    # EXPORTS
     def export_metrics(self, dir):
         if self.point_idx is not None:
             name = f"{self.point_idx}_{BODY_JOINTS_MAP[self.point_idx]}"
@@ -715,7 +751,7 @@ class Point:
         json_file = json_file / f"{name}.json"
         json_file.parent.mkdir(parents=True, exist_ok=True)
         with open(json_file, "w") as f:
-            json.dump(json_output, f, indent=4)
+            json.dump(json_output, f, indent=2)
 
     def export_diagrams(
         self,
@@ -833,15 +869,3 @@ class Point:
         json_file = Path(human_dir) / f"{name}.json"
         with open(json_file, "w") as f:
             json.dump(json_output, f, indent=4)
-
-    def _appendEmptyPoints(self):
-        self.data["Raw Ori X"] = np.append(self.data["Raw Ori X"], np.nan)
-        self.data["Raw Ori X"] = np.append(self.data["Raw Ori Y"], np.nan)
-        # update num_frames
-        self.calibrationHelper["num_frames"] = len(self.data["Raw Ori X"])
-
-    def append_points(self, data):
-        assert len(data) == 2, f"Expected 2 coordinates, got {len(data)}"
-        data = np.array(data)
-        self.data["Raw Ori X"] = np.append(self.data["Raw Ori X"], data[:, 0])
-        self.data["Raw Ori Y"] = np.append(self.data["Raw Ori Y"], data[:, 1])

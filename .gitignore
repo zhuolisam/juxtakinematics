@@ -48,12 +48,12 @@ coverage.xml
 
 # Sphinx documentation
 docs/_build/
-
+experiment.py
 .DS_Store
 *.DS_Store
-rtm/model
 model/
 data/
+output/
 ignore/
 gg.py
 *.ipynb
@@ -64,4 +64,4 @@ runs/
 ????????-?????? 
 data/
 test*.py
-experiment.py
+.python_version

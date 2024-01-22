@@ -3,7 +3,6 @@ import re
 import time
 
 import numpy as np
-import torch
 
 
 class Profile(contextlib.ContextDecorator):
@@ -20,7 +19,6 @@ class Profile(contextlib.ContextDecorator):
             t (float): Initial time. Defaults to 0.0.
         """
         self.t = t
-        self.cuda = torch.cuda.is_available()
 
     def __enter__(self):
         """
@@ -40,8 +38,6 @@ class Profile(contextlib.ContextDecorator):
         """
         Get current time.
         """
-        if self.cuda:
-            torch.cuda.synchronize()
         return time.time()
 
 

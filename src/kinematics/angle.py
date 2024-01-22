@@ -21,9 +21,6 @@ class Angle:
         x_meter_per_pixel=None,
         y_meter_per_pixel=None,
     ):
-        if dependencies:
-            self.init_dependencies(dependencies)
-
         self.calibrationHelper = {
             "unit": "pixel",  # can be "pixel" or "meter
             "x_meter_per_pixel": 1.0
@@ -35,7 +32,11 @@ class Angle:
             "fps": 30 if fps is None else float(fps),
             "num_frames": 0 if num_frames is None else num_frames,
         }
-        self.angle_name = angle_name if angle_name is not None else uuid.uuid4().hex
+
+        if dependencies:
+            self.init_dependencies(dependencies)
+
+        self.angle_name = f"{angle_name}" if angle_name else f"angle_{uuid.uuid4().hex}"
         self.data = {}
         self.smoothing_helper = None
 
@@ -53,7 +54,6 @@ class Angle:
                 for each in self.dependencies:
                     if np.isnan(each.data["X"]).all() or np.isnan(each.data["Y"]).all():
                         each.preprocess()
-                        each.compute()
                 self.calibrationHelper = self.dependencies[0].calibrationHelper
                 assert all(
                     [
@@ -208,7 +208,7 @@ class Angle:
         json_file = json_file / f"{name}.json"
         json_file.parent.mkdir(parents=True, exist_ok=True)
         with open(json_file, "w") as f:
-            json.dump(json_output, f, indent=4)
+            json.dump(json_output, f, indent=2)
 
     def export(
         self,

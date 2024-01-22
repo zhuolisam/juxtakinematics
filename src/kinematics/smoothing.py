@@ -17,7 +17,6 @@ class MovingAverage:
         frames = int(span / (2 * interval))
 
         smoothed = np.convolve(padded, np.ones(frames) / frames, mode="same")
-        print(smoothed)
         return self.remove_padding(smoothed, padding)
 
     def add_padding(self, samples, padding, sentinels):
