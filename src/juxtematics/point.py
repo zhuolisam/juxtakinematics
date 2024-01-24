@@ -11,6 +11,7 @@ from .constants import BODY_JOINTS_MAP
 from .filtering import FilteredTrajectory
 from .smoothing import MovingAverage
 from .utils import get_time
+import pandas as pd
 
 PointMetrics = [
     "X",
@@ -81,6 +82,7 @@ class Point:
             else "point_" + uuid.uuid4().hex
         )
         self.filter = FilteredTrajectory()
+        self.smoothing = MovingAverage()
 
     # SETUP
     def initWithEmptyFrames(self, num_frames, fps):
@@ -171,10 +173,9 @@ class Point:
         if preprocess_smoothing_on:
             self.data["Raw Ori X Smooth"] = self.data["X"].copy()
             self.data["Raw Ori Y Smooth"] = self.data["Y"].copy()
-            smoothing = MovingAverage()
             self.data["Raw Ori X Smooth"][
                 self.start_index : self.end_index + 1
-            ] = smoothing.filter_samples(
+            ] = self.smoothing.filter_samples(
                 samples=self.data["Raw Ori X Smooth"][
                     self.start_index : self.end_index + 1
                 ],
@@ -184,7 +185,7 @@ class Point:
             )
             self.data["Raw Ori Y Smooth"][
                 self.start_index : self.end_index + 1
-            ] = smoothing.filter_samples(
+            ] = self.smoothing.filter_samples(
                 samples=self.data["Raw Ori Y Smooth"][
                     self.start_index : self.end_index + 1
                 ],
@@ -285,13 +286,13 @@ class Point:
         self.data["Speed"][self.start_index : self.end_index + 1] = np.sqrt(
             x_speed**2 + y_speed**2
         )
-        self.data["X Speed Raw"] = self.data["X Speed"]
-        self.data["Y Speed Raw"] = self.data["Y Speed"]
-        self.data["Speed Raw"] = self.data["Speed"]
+        self.data["X Speed Raw"] = self.data["X Speed"].copy()
+        self.data["Y Speed Raw"] = self.data["Y Speed"].copy()
+        self.data["Speed Raw"] = self.data["Speed"].copy()
 
         if filter_on:
-            self.data["X Speed Filter"] = self.data["X Speed"]
-            self.data["Y Speed Filter"] = self.data["Y Speed"]
+            self.data["X Speed Filter"] = self.data["X Speed"].copy()
+            self.data["Y Speed Filter"] = self.data["Y Speed"].copy()
             # Apply filtering
             (
                 self.data["X Speed Filter"][self.start_index : self.end_index + 1],
@@ -309,12 +310,12 @@ class Point:
             self.data["Speed"] = self.data["Speed Filter"]
 
         if smoothing_on:
-            self.data["X Speed Smooth"] = self.data["X Speed"]
-            self.data["Y Speed Smooth"] = self.data["Y Speed"]
+            self.data["X Speed Smooth"] = self.data["X Speed"].copy()
+            self.data["Y Speed Smooth"] = self.data["Y Speed"].copy()
             # Apply smoothing
             self.data["X Speed Smooth"][
                 self.start_index : self.end_index + 1
-            ] = MovingAverage.filter_samples(
+            ] = self.smoothing.filter_samples(
                 self.data["X Speed Smooth"][self.start_index : self.end_index + 1],
                 self.calibrationHelper["fps"],
                 40,
@@ -322,7 +323,7 @@ class Point:
             )
             self.data["Y Speed Smooth"][
                 self.start_index : self.end_index + 1
-            ] = MovingAverage.filter_samples(
+            ] = self.smoothing.filter_samples(
                 self.data["Y Speed Smooth"][self.start_index : self.end_index + 1],
                 self.calibrationHelper["fps"],
                 40,
@@ -364,13 +365,13 @@ class Point:
         self.data["Acceleration"][self.start_index : self.end_index + 1] = np.sqrt(
             x_accel**2 + y_accel**2
         )
-        self.data["X Acceleration Raw"] = self.data["X Acceleration"]
-        self.data["Y Acceleration Raw"] = self.data["Y Acceleration"]
-        self.data["Acceleration Raw"] = self.data["Acceleration"]
+        self.data["X Acceleration Raw"] = self.data["X Acceleration"].copy()
+        self.data["Y Acceleration Raw"] = self.data["Y Acceleration"].copy()
+        self.data["Acceleration Raw"] = self.data["Acceleration"].copy()
 
         if filter_on:
-            self.data["X Acceleration Filter"] = self.data["X Acceleration"]
-            self.data["Y Acceleration Filter"] = self.data["Y Acceleration"]
+            self.data["X Acceleration Filter"] = self.data["X Acceleration"].copy()
+            self.data["Y Acceleration Filter"] = self.data["Y Acceleration"].copy()
 
             # Apply filtering
             (
@@ -399,22 +400,26 @@ class Point:
             self.data["Acceleration"] = self.data["Acceleration Filter"]
 
         if smoothing_on:
-            self.data["X Acceleration Smooth"] = self.data["X Acceleration"]
-            self.data["Y Acceleration Smooth"] = self.data["Y Acceleration"]
+            self.data["X Acceleration Smooth"] = self.data["X Acceleration"].copy()
+            self.data["Y Acceleration Smooth"] = self.data["Y Acceleration"].copy()
 
             # Apply smoothing
-            self.data["X Acceleration"][
+            self.data["X Acceleration Smooth"][
                 self.start_index : self.end_index + 1
-            ] = MovingAverage.filter_samples(
-                self.data["X Acceleration"][self.start_index : self.end_index + 1],
+            ] = self.smoothing.filter_samples(
+                self.data["X Acceleration Smooth"][
+                    self.start_index : self.end_index + 1
+                ],
                 self.calibrationHelper["fps"],
                 50,
                 1,
             )
-            self.data["Y Acceleration"][
+            self.data["Y Acceleration Smooth"][
                 self.start_index : self.end_index + 1
-            ] = MovingAverage.filter_samples(
-                self.data["Y Acceleration"][self.start_index : self.end_index + 1],
+            ] = self.smoothing.filter_samples(
+                self.data["Y Acceleration Smooth"][
+                    self.start_index : self.end_index + 1
+                ],
                 self.calibrationHelper["fps"],
                 50,
                 1,
@@ -465,10 +470,6 @@ class Point:
                 for i in range(self.calibrationHelper["num_frames"])
             ],
         }
-        if None in data["metrics"]:
-            del data["metrics"][None]
-        if None in data["metrics_info"]:
-            del data["metrics_info"][None]
         return data
 
     def get_frame_point(self, index):
@@ -757,6 +758,33 @@ class Point:
         json_file.parent.mkdir(parents=True, exist_ok=True)
         with open(json_file, "w") as f:
             json.dump(json_output, f, indent=2)
+
+    def export_csv(self, dir):
+        # let's turn the data into csv file
+        if self.point_idx is not None:
+            name = f"{self.point_idx}_{BODY_JOINTS_MAP[self.point_idx]}"
+        else:
+            name = self.point_name
+        # First, let's get the metrics
+        raw_result = self.get_metrics_flatten()
+        df = pd.DataFrame(raw_result)
+        csv_file = Path(dir) / get_time()
+        csv_file = csv_file / f"{name}.csv"
+        csv_file.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(csv_file)
+
+    def get_metrics_flatten(self):
+        # First, let's get the metrics
+        metrics = self.get_metrics()
+        # We need to flatten the metrics
+        result = {}
+        # First, let's get the metrics_info
+        body_joints_metrics = metrics["metrics"]
+        for metric_name, metric in body_joints_metrics.items():
+            result[f"{metric_name}"] = metric
+
+        result["time"] = metrics["time"]
+        return result
 
     def export_diagrams(
         self,
