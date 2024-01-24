@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, List
 
 import numpy as np
-
+import pandas as pd
 from .angle import Angle
 from .point import Point, PointMetrics
 from .utils import get_time
@@ -257,8 +257,8 @@ class HumanProfile:
                 self.init_with_data(accumulated_data)
 
     def setup_from_data(self, data, human_idx=1):
-        # Exact same as setup_from_csv, but we don't need to parse the JSON string, already formatted as
-        # [frames][dict:[17 joints][x, y]]
+        # Exact same as setup_from_csv, but we don't need to parse the JSON string, already formatted as [frames][dict:[17 joints][x, y]]
+        # It's taking all frames and all humans, but it only keeps the data of one human
         accumulated_data = []
         for frame_data in data:
             processed_frame_data = self.process_frame(
@@ -352,3 +352,37 @@ class HumanProfile:
         json_file.parent.mkdir(parents=True, exist_ok=True)
         with open(json_file, "w") as f:
             json.dump(json_output, f, indent=2)
+
+    def export_csv(self, dir):
+        # let's turn the data into csv file
+        if self.human_idx:
+            name = f"{self.human_idx}_{self.name}"
+        else:
+            name = self.name
+        # First, let's get the metrics
+        raw_result = self.get_metrics_pd()
+        df = pd.DataFrame(raw_result)
+        csv_file = Path(dir) / get_time()
+        csv_file = csv / f"{name}.csv"
+        csv_file.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(csv_file)
+
+    def get_metrics_flatten(self):
+        # First, let's get the metrics
+        metrics = self.get_metrics()
+        # We need to flatten the metrics
+        result = {}
+        # First, let's get the metrics_info
+        body_joints_metrics = metrics["body_joints_metrics"]
+
+        for body, metric_data in body_joints_metrics.items():
+            for metric_name, metric in metric_data["metrics"].items():
+                result[f"{body}_{metric_name}"] = metric
+
+        custom_metrics = metrics["custom_metrics"]
+        for body_part, metric_data in custom_metrics.items():
+            for metric_name, metric in metric_data.items():
+                result[f"{body_part}_{metric_name}"] = metric
+
+        result["time"] = metrics["time"]
+        return result

@@ -4,7 +4,7 @@ build-backend = "poetry.masonry.api"
 
 [tool.poetry]
 name = "juxtematics"
-version = "0.0.1"
+version = "0.1.0"
 description = ""
 authors = ["Zhuo Li <zhuolisam0627@gmail.com>"]
 license = "MIT"
@@ -37,6 +37,7 @@ matplotlib ="^3.8.2"
 numpy = "^1.26.3"
 scipy = "^1.12.0"
 pydantic = "^2.5.3"
+pandas = "^2.2.0"
 
 [tool.poetry.urls]
 "Homepage" = "https://github.com/zhuolisam/juxtematics"

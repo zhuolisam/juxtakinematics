@@ -94,6 +94,11 @@ class Kinematics:
                 for human_idx, human in self.profileSet.items():
                     human.setup_from_data(accumulated_data, human_idx=human_idx)
 
+    def setup_from_data(self, data):
+        # This one, we already have everything formatted, as {human_idx: [frame_data * 17 * 2]}
+        # Init three human profiles, and pass their respective data. Should use init_with_data function
+        return
+
     def setup_from_stringio(self, run_csv) -> None:
         if isinstance(run_csv, StringIO):
             self.source_path = Path(__file__).resolve() / "temp.csv"
