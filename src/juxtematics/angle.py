@@ -121,7 +121,7 @@ class Angle:
             self.data["Angle Acceleration"] = self.data["Angle Acceleration Smoothing"]
 
     def get_metrics(self):
-        return {
+        data = {
             "metadata": {
                 "x_meter_per_pixel": self.dependencies[0].calibrationHelper[
                     "x_meter_per_pixel"
@@ -198,6 +198,11 @@ class Angle:
                 else None,
             },
         }
+        if None in data["metrics"]:
+            del data["metrics"][None]
+        if None in data["metrics_info"]:
+            del data["metrics_info"][None]
+        return data
 
     def export_metrics(self, dir):
         name = f"{self.angle_name}"

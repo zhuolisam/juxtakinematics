@@ -198,7 +198,6 @@ class Kinematics:
             self.associate_human_profile(associate_human_profile)
 
         if len(onlyHumanProfile) > 0:
-            print(self.profileSet.keys())
             self.profileSet = {
                 each: self.profileSet[str(each)] for each in onlyHumanProfile
             }

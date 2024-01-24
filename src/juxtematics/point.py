@@ -276,7 +276,6 @@ class Point:
             )
             / time_diff
         )
-
         self.data["X Speed"] = self.data["X Displacement"].copy()
         self.data["Y Speed"] = self.data["Y Displacement"].copy()
         self.data["Speed"] = self.data["Displacement"].copy()
@@ -289,6 +288,7 @@ class Point:
         self.data["X Speed Raw"] = self.data["X Speed"]
         self.data["Y Speed Raw"] = self.data["Y Speed"]
         self.data["Speed Raw"] = self.data["Speed"]
+
         if filter_on:
             self.data["X Speed Filter"] = self.data["X Speed"]
             self.data["Y Speed Filter"] = self.data["Y Speed"]
@@ -491,7 +491,7 @@ class Point:
         }
 
     def get_metrics_data(self):
-        return {
+        data = {
             # coordinate
             "Raw Ori X": self.data["Raw Ori X"].tolist(),
             "Raw Ori Y": self.data["Raw Ori Y"].tolist(),
@@ -606,9 +606,12 @@ class Point:
             "Y Acceleration": self.data["Y Acceleration"].tolist(),
             "Acceleration": self.data["Acceleration"].tolist(),
         }
+        if None in data:
+            del data[None]
+        return data
 
     def get_metrics_info(self):
-        return {
+        data = {
             # coordinate
             "Raw Ori X": {"Unit": "Pixel"},
             "Raw Ori Y": {"Unit": "Pixel"},
@@ -738,6 +741,8 @@ class Point:
                 else "Meter/s^2"
             },
         }
+        if None in data:
+            del data[None]
 
     # EXPORTS
     def export_metrics(self, dir):

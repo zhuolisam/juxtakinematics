@@ -360,10 +360,10 @@ class HumanProfile:
         else:
             name = self.name
         # First, let's get the metrics
-        raw_result = self.get_metrics_pd()
+        raw_result = self.get_metrics_flatten()
         df = pd.DataFrame(raw_result)
         csv_file = Path(dir) / get_time()
-        csv_file = csv / f"{name}.csv"
+        csv_file = csv_file / f"{name}.csv"
         csv_file.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(csv_file)
 
@@ -376,7 +376,7 @@ class HumanProfile:
         body_joints_metrics = metrics["body_joints_metrics"]
 
         for body, metric_data in body_joints_metrics.items():
-            for metric_name, metric in metric_data["metrics"].items():
+            for metric_name, metric in metric_data.items():
                 result[f"{body}_{metric_name}"] = metric
 
         custom_metrics = metrics["custom_metrics"]
