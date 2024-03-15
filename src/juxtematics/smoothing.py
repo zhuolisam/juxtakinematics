@@ -6,6 +6,8 @@ class MovingAverage:
         pass
 
     def filter_samples(self, samples, fs, span, sentinels=1):
+        if len(samples) == 0:
+            return samples
         interval = 1000 / fs
         if span / 2 <= interval:
             return samples

@@ -9,7 +9,7 @@ import pandas as pd
 from .angle import Angle
 from .point import Point, PointMetrics
 from .utils import get_time
-
+from .constants import BODY_JOINTS_MAP
 # Two methods to init Human
 # 1. We already know the len, in Point we can init empty frames and replace index
 # 2. We don't know the len, in Point we can use append function
@@ -377,6 +377,8 @@ class HumanProfile:
 
         for body, metric_data in body_joints_metrics.items():
             for metric_name, metric in metric_data.items():
+                if body in BODY_JOINTS_MAP:
+                    body = BODY_JOINTS_MAP[body]
                 result[f"{body}_{metric_name}"] = metric
 
         custom_metrics = metrics["custom_metrics"]
